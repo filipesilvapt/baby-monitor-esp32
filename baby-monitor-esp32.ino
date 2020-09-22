@@ -122,7 +122,7 @@ void readThermometerValue() {
     // Save the current reading in the database list
     temps.set("temp", currentTemp);
     temps.set("timestamp", getTimestampUTC());
-    pushFirebaseEntry(RT_DATABASE_THERMOMETER_READINGS, accels);
+    pushFirebaseEntry(RT_DATABASE_THERMOMETER_READINGS, temps);
 
     // Save the current reading as the last reading
     pushFirebaseFloatValue(RT_DATABASE_THERMOMETER_LAST_READING, currentTemp);
@@ -157,7 +157,7 @@ void readAccelerometerValues() {
     accels.set("y_axis", event.acceleration.y);
     accels.set("z_axis", event.acceleration.z);
     accels.set("timestamp", getTimestampUTC());
-    pushFirebaseEntry(RT_DATABASE_ACCELEROMETER_READINGS, temps);
+    pushFirebaseEntry(RT_DATABASE_ACCELEROMETER_READINGS, accels);
   }
 }
 
