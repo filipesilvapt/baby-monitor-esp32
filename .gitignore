@@ -1,0 +1,2 @@
+# Ignore the actual credential file which might contain sensitive info
+Credentials.h
