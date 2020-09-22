@@ -57,7 +57,7 @@ unsigned long goTimeAccel;
 #define RT_DATABASE_NODE_ID String("Node-02")
 #define RT_DATABASE_CLIENT_TOKENS RT_DATABASE_NODE_ID + "/ClientTokens"
 #define RT_DATABASE_THERMOMETER_READINGS RT_DATABASE_NODE_ID + "/ThermometerReadings"
-#define RT_DATABASE_THERMOMETER_LAST_READING RT_DATABASE_NODE_ID + "/ThermometerLastReading"
+#define RT_DATABASE_THERMOMETER_LAST_READING RT_DATABASE_NODE_ID + "/LastThermometerReading"
 #define RT_DATABASE_ACCELEROMETER_READINGS RT_DATABASE_NODE_ID + "/AccelerometerReadings"
 #define RT_DATABASE_THERMOMETER_LAST_SLEEP_STATE RT_DATABASE_NODE_ID + "/LastSleepState"
 
@@ -111,18 +111,18 @@ void readThermometerValue() {
 
     // Print in Console
     goTimeTherm = millis() + nextTimeTherm;
-    //Serial.println("  ");
-    //Serial.println("Leitura de Temperatura: ");
-    //Serial.print("Temperatura Ambiente = "); Serial.print(therm.readAmbientTempC());
-    //Serial.print("ºC\tTemperatura do Objeto = "); Serial.print(currentTemp); Serial.println("*C");
-    //Serial.print("Temperatura Ambiente = "); Serial.print(therm.readAmbientTempF());
-    //Serial.print("*F\tTemperatura do Objeto = "); Serial.print(therm.readObjectTempF()); Serial.println("*F");
-    //Serial.println();
+    Serial.println("  ");
+    Serial.println("Leitura de Temperatura: ");
+    Serial.print("Temperatura Ambiente = "); Serial.print(therm.readAmbientTempC());
+    Serial.print("ºC\tTemperatura do Objeto = "); Serial.print(currentTemp); Serial.println("*C");
+    Serial.print("Temperatura Ambiente = "); Serial.print(therm.readAmbientTempF());
+    Serial.print("*F\tTemperatura do Objeto = "); Serial.print(therm.readObjectTempF()); Serial.println("*F");
+    Serial.println();
 
     // Save the current reading in the database list
     temps.set("temp", currentTemp);
     temps.set("timestamp", getTimestampUTC());
-    pushFirebaseEntry(RT_DATABASE_THERMOMETER_READINGS, temps);
+    pushFirebaseEntry(RT_DATABASE_THERMOMETER_READINGS, accels);
 
     // Save the current reading as the last reading
     pushFirebaseFloatValue(RT_DATABASE_THERMOMETER_LAST_READING, currentTemp);
@@ -144,12 +144,12 @@ void readAccelerometerValues() {
     accel.getEvent(&event);
 
     // Display the results in m/s^2
-    //Serial.print("Aceleração:");
-    //Serial.print("\tEixo oX: "); Serial.print(event.acceleration.x);
-    //Serial.print("\tEixo oY: "); Serial.print(event.acceleration.y);
-    //Serial.print("\tEixo oZ: ");
+    Serial.print("Aceleração:");
+    Serial.print("\tEixo oX: "); Serial.print(event.acceleration.x);
+    Serial.print("\tEixo oY: "); Serial.print(event.acceleration.y);
+    Serial.print("\tEixo oZ: ");
     Serial.print(event.acceleration.z);
-    //Serial.print("\t(m/s^2)");
+    Serial.print("\t(m/s^2)");
     Serial.println();
 
     // Save the current reading in the database list
