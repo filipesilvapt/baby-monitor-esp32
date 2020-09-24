@@ -60,8 +60,8 @@ unsigned long goTimeTherm;
 unsigned long goTimeAccel;
 
 // Temperature thresholds and types of warnings
-#define HIGH_TEMP_THRESHOLD     38.0f
-#define LOW_TEMP_THRESHOLD      35.5f
+#define HIGH_TEMP_THRESHOLD     37.5f
+#define LOW_TEMP_THRESHOLD      36.0f
 #define HIGH_TEMP_WARNING_FLAG  1
 #define LOW_TEMP_WARNING_FLAG   -1
 
