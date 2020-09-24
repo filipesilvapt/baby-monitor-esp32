@@ -69,13 +69,15 @@ unsigned long goTimeAccel;
 #define RT_DATABASE_NODE_ID String("Node-02")
 #define RT_DATABASE_CLIENT_TOKENS RT_DATABASE_NODE_ID + "/ClientTokens"
 #define RT_DATABASE_THERMOMETER_READINGS RT_DATABASE_NODE_ID + "/ThermometerReadings"
-#define RT_DATABASE_THERMOMETER_LAST_READING RT_DATABASE_NODE_ID + "/LastThermometerReading"
+#define RT_DATABASE_LAST_THERMOMETER_READING RT_DATABASE_NODE_ID + "/LastThermometerReading"
+#define RT_DATABASE_LAST_THERMOMETER_READING_TIMESTAMP RT_DATABASE_NODE_ID + "/LastThermometerReadingTimestamp"
 #define RT_DATABASE_ACCELEROMETER_READINGS RT_DATABASE_NODE_ID + "/AccelerometerReadings"
 #define RT_DATABASE_THERMOMETER_LAST_SLEEP_STATE RT_DATABASE_NODE_ID + "/LastSleepState"
 
 // Firebase Variables
 float currentTemp = 0;
 float currentTempRounded = 0;
+String currentTempTimestamp = "";
 
 // Firebase connection object
 FirebaseData firebaseData;
@@ -121,6 +123,7 @@ void loop() {
 void readThermometerValue() {
   if (millis() >= goTimeTherm) {
     currentTemp = therm.readObjectTempC();
+    currentTempTimestamp = getTimestampUTC();
 
     // Print in Console
     goTimeTherm = millis() + nextTimeTherm;
@@ -128,19 +131,20 @@ void readThermometerValue() {
     Serial.println("Leitura de Temperatura: ");
     Serial.print("Temperatura Ambiente = "); Serial.print(therm.readAmbientTempC());
     Serial.print("ºC\tTemperatura do Objeto = "); Serial.print(currentTemp); Serial.println("*C");
-    Serial.print("Temperatura Ambiente = "); Serial.print(therm.readAmbientTempF());
-    Serial.print("*F\tTemperatura do Objeto = "); Serial.print(therm.readObjectTempF()); Serial.println("*F");
+    //Serial.print("Temperatura Ambiente = "); Serial.print(therm.readAmbientTempF());
+    //Serial.print("*F\tTemperatura do Objeto = "); Serial.print(therm.readObjectTempF()); Serial.println("*F");
     Serial.println();
 
     // Save the current reading in the database list
     temps.set("temp", currentTemp);
-    temps.set("timestamp", getTimestampUTC());
+    temps.set("timestamp", currentTempTimestamp);
     pushFirebaseEntry(RT_DATABASE_THERMOMETER_READINGS, temps);
 
     // Save the current reading as the last reading
-    pushFirebaseFloatValue(RT_DATABASE_THERMOMETER_LAST_READING, currentTemp);
+    pushFirebaseFloatValue(RT_DATABASE_LAST_THERMOMETER_READING, currentTemp);
+    pushFirebaseStringValue(RT_DATABASE_LAST_THERMOMETER_READING_TIMESTAMP, currentTempTimestamp);
 
-    // Round the current temperature to one decimal place
+    // Round the current temperature to one decimal place for better comparison
     currentTempRounded = round(currentTemp * 10) / 10;
 
     // Trigger a notification if the current reading exceeds one of the thresholds
@@ -251,6 +255,17 @@ void pushFirebaseEntry(const String &databasePath, FirebaseJson &jsonToPush) {
 */
 void pushFirebaseFloatValue(const String &databasePath, float floatValue) {
   if (Firebase.setFloat(firebaseData, databasePath, floatValue)) {
+    //Serial.println(firebaseData.dataPath() + "/" + firebaseData.pushName());
+  } else {
+    Serial.println(firebaseData.errorReason());
+  }
+}
+
+/*
+   Set the string value into the given database path in Firebase
+*/
+void pushFirebaseStringValue(const String &databasePath, String stringValue) {
+  if (Firebase.setString(firebaseData, databasePath, stringValue)) {
     //Serial.println(firebaseData.dataPath() + "/" + firebaseData.pushName());
   } else {
     Serial.println(firebaseData.errorReason());
