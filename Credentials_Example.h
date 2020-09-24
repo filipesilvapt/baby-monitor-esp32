@@ -6,7 +6,8 @@
 #define WIFI_PASSWORD     ""
 
 // The Firebase Credentials
-#define FIREBASE_HOST     ""         // the project address from firebase
-#define FIREBASE_AUTH     ""  // the database secret key from firebase
+#define FIREBASE_HOST           ""  // the project address from firebase
+#define FIREBASE_AUTH           ""  // the database secret key from firebase
+#define FIREBASE_FCM_SERVER_KEY ""  // the cloud messaging server key
 
 #endif

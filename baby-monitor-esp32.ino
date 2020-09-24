@@ -3,6 +3,12 @@
 */
 
 /*
+  Libraries - String parsing
+*/
+#include <iomanip>
+#include <sstream>
+
+/*
    Libraries - Communications
    WiFi comes within the ESP32 library
    Firebase ESP32 Client by Mobizt v3.7.6
@@ -33,14 +39,14 @@
 #include "Credentials.h"
 
 // Accelerometer pins
-#define LIS3DH_CLK 18
-#define LIS3DH_MISO 19
-#define LIS3DH_MOSI 23
-#define LIS3DH_CS 5
+#define LIS3DH_CLK    18
+#define LIS3DH_MISO   19
+#define LIS3DH_MOSI   23
+#define LIS3DH_CS     5
 
 // Thermometer pins
-#define I2C_SDA_PIN 17
-#define I2C_SCL_PIN 22
+#define I2C_SDA_PIN   17
+#define I2C_SCL_PIN   22
 
 // Sensor objects
 Adafruit_MLX90614 therm = Adafruit_MLX90614();
@@ -53,6 +59,12 @@ unsigned long nextTimeAccel = 200;   // Do this every second or 200 milliseconds
 unsigned long goTimeTherm;
 unsigned long goTimeAccel;
 
+// Temperature thresholds and types of warnings
+#define HIGH_TEMP_THRESHOLD     38.0f
+#define LOW_TEMP_THRESHOLD      35.5f
+#define HIGH_TEMP_WARNING_FLAG  1
+#define LOW_TEMP_WARNING_FLAG   -1
+
 // The Firebase RT Database Paths
 #define RT_DATABASE_NODE_ID String("Node-02")
 #define RT_DATABASE_CLIENT_TOKENS RT_DATABASE_NODE_ID + "/ClientTokens"
@@ -63,6 +75,7 @@ unsigned long goTimeAccel;
 
 // Firebase Variables
 float currentTemp = 0;
+float currentTempRounded = 0;
 
 // Firebase connection object
 FirebaseData firebaseData;
@@ -126,6 +139,16 @@ void readThermometerValue() {
 
     // Save the current reading as the last reading
     pushFirebaseFloatValue(RT_DATABASE_THERMOMETER_LAST_READING, currentTemp);
+
+    // Round the current temperature to one decimal place
+    currentTempRounded = round(currentTemp * 10) / 10;
+
+    // Trigger a notification if the current reading exceeds one of the thresholds
+    if (currentTempRounded >= HIGH_TEMP_THRESHOLD) {
+      sendTemperatureNotification(currentTempRounded, HIGH_TEMP_WARNING_FLAG);
+    } else if (currentTempRounded <= LOW_TEMP_THRESHOLD) {
+      sendTemperatureNotification(currentTempRounded, LOW_TEMP_WARNING_FLAG);
+    }
   }
 }
 
@@ -262,4 +285,82 @@ String getTimestampUTC() {
   String finalTimestampString = finalTimestamp;
 
   return finalTimestampString;
+}
+
+/*
+   Fetch the client device tokens from the Firebase realtime database
+   and add them to the Firebase cloud messaging object in order to
+   target a specifc set of devices
+*/
+void addDeviceTokensToFCM() {
+  // Fetch the client tokens
+  if (Firebase.getJSON(firebaseData, RT_DATABASE_CLIENT_TOKENS)) {
+
+    if (firebaseData.dataType() == "json") {
+      FirebaseJson &json = firebaseData.jsonObject();
+
+      //Print all object data
+      Serial.println();
+      Serial.println("Pretty printed JSON data:");
+      String jsonStr;
+      json.toString(jsonStr, true);
+      Serial.println(jsonStr);
+      Serial.println();
+
+      // Iterate through the json object
+      size_t len = json.iteratorBegin();
+      String key, value = "";
+      int type = 0;
+      for (size_t i = 0; i < len; i++) {
+        json.iteratorGet(i, type, key, value);
+
+        // Add the device token
+        firebaseData.fcm.addDeviceToken(value);
+      }
+      json.iteratorEnd();
+    }
+
+  } else {
+    Serial.println(firebaseData.errorReason());
+  }
+}
+
+/*
+   Send a notification to the registered clients about a certain temperature with
+   a given warning level
+*/
+void sendTemperatureNotification(float temperature, int typeOfTempWarning) {
+  Serial.println("------------------------------------");
+  Serial.println("Sending temperature notification");
+
+  // Add the devices to which we want to send the notification
+  addDeviceTokensToFCM();
+
+  // Force temperature  to only have one decimal place
+  std::stringstream stream;
+  stream << std::fixed << std::setprecision(1) << temperature;
+  std::string finalTemperature = stream.str();
+
+  // Define the title and body of the notification message according to the type of warning
+  if (typeOfTempWarning == HIGH_TEMP_WARNING_FLAG) {
+    firebaseData.fcm.setNotifyMessage("High Temperature", "(Fever) Your baby's temperature is " + String(finalTemperature.c_str()) + " ºC");
+  } else if (typeOfTempWarning == LOW_TEMP_WARNING_FLAG) {
+    firebaseData.fcm.setNotifyMessage("Low Temperature", "(Cold) Your baby's temperature is " + String(finalTemperature.c_str()) + " ºC");
+  }
+
+  // Define the data object sent inside the notification
+  firebaseData.fcm.setDataMessage("{\"temperature\":" + String(finalTemperature.c_str()) + ", \"typeOfTempWarning\":" + String(typeOfTempWarning) + "}");
+
+  // Send the notification to all of the registerd clients
+  if (Firebase.broadcastMessage(firebaseData)) {
+    Serial.println("PASSED");
+    Serial.println(firebaseData.fcm.getSendResult());
+    Serial.println("------------------------------------");
+    Serial.println();
+  } else {
+    Serial.println("FAILED");
+    Serial.println("REASON: " + firebaseData.errorReason());
+    Serial.println("------------------------------------");
+    Serial.println();
+  }
 }
