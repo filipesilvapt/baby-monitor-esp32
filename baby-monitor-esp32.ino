@@ -110,6 +110,9 @@ void setup() {
 
   // Setup the Firebase connection
   setupFirebaseConnection();
+
+  // Setup the Firebase cloud messaging
+  setupFirebaseCloudMessaging();
 }
 
 void loop() {
@@ -210,7 +213,7 @@ void connectToWiFi() {
 }
 
 /*
-   Start the firebase connection and the necessary properties
+   Start the Firebase connection and the necessary properties
 */
 void setupFirebaseConnection() {
   // Setup Firebase credentials
@@ -300,6 +303,17 @@ String getTimestampUTC() {
   String finalTimestampString = finalTimestamp;
 
   return finalTimestampString;
+}
+
+/*
+   Setup the Firebase cloud messaging properties
+*/
+void setupFirebaseCloudMessaging() {
+  firebaseData.fcm.begin(FIREBASE_FCM_SERVER_KEY);
+
+  firebaseData.fcm.setPriority("high");
+
+  firebaseData.fcm.setTimeToLive(1000);
 }
 
 /*
