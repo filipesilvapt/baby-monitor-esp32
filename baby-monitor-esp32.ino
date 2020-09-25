@@ -59,22 +59,25 @@ unsigned long nextTimeAccel = 200;   // Do this every second or 200 milliseconds
 unsigned long goTimeTherm;
 unsigned long goTimeAccel;
 
-// Temperature thresholds and types of warnings
-#define HIGH_TEMP_THRESHOLD     37.5f
-#define LOW_TEMP_THRESHOLD      36.0f
+// The Firebase RT Database Paths
+#define RT_DATABASE_NODE_ID String("node_01")
+#define RT_DATABASE_CLIENT_TOKENS RT_DATABASE_NODE_ID + "/client_tokens"
+#define RT_DATABASE_THERMOMETER_READINGS RT_DATABASE_NODE_ID + "/thermometer_readings"
+#define RT_DATABASE_LAST_THERMOMETER_READING RT_DATABASE_NODE_ID + "/last_thermometer_reading"
+#define RT_DATABASE_LAST_THERMOMETER_READING_TIMESTAMP RT_DATABASE_NODE_ID + "/last_thermometer_reading_timestamp"
+#define RT_DATABASE_ACCELEROMETER_READINGS RT_DATABASE_NODE_ID + "/accelerometer_readings"
+#define RT_DATABASE_THERMOMETER_LAST_SLEEP_STATE RT_DATABASE_NODE_ID + "/last_sleep_state"
+#define RT_DATABASE_TEMPERATURE_THRESHOLDS RT_DATABASE_NODE_ID + "/temperature_thresholds"
+#define RT_DATABASE_HIGH_TEMP_THRESHOLD_KEY String("high_temp")
+#define RT_DATABASE_LOW_TEMP_THRESHOLD_KEY String("low_temp")
+
+// Temperature types of warnings
 #define HIGH_TEMP_WARNING_FLAG  1
 #define LOW_TEMP_WARNING_FLAG   -1
 
-// The Firebase RT Database Paths
-#define RT_DATABASE_NODE_ID String("Node-02")
-#define RT_DATABASE_CLIENT_TOKENS RT_DATABASE_NODE_ID + "/ClientTokens"
-#define RT_DATABASE_THERMOMETER_READINGS RT_DATABASE_NODE_ID + "/ThermometerReadings"
-#define RT_DATABASE_LAST_THERMOMETER_READING RT_DATABASE_NODE_ID + "/LastThermometerReading"
-#define RT_DATABASE_LAST_THERMOMETER_READING_TIMESTAMP RT_DATABASE_NODE_ID + "/LastThermometerReadingTimestamp"
-#define RT_DATABASE_ACCELEROMETER_READINGS RT_DATABASE_NODE_ID + "/AccelerometerReadings"
-#define RT_DATABASE_THERMOMETER_LAST_SLEEP_STATE RT_DATABASE_NODE_ID + "/LastSleepState"
-
-// Firebase Variables
+// Temperature variables
+float highTempThreshold = 0;
+float lowTempThreshold = 0;
 float currentTemp = 0;
 float currentTempRounded = 0;
 String currentTempTimestamp = "";
@@ -105,7 +108,7 @@ void setup() {
   Serial.println("Starting accelerometer (SPI)");
   if (! accel.begin()) {   // change this to 0x18 or 0x19 to use i2c or leave blank for spi
     Serial.println("Couldnt start accelerometer");
-    while (1) yield();
+    //while (1) yield();
   }
 
   // Connect to Wi-Fi
@@ -119,11 +122,17 @@ void setup() {
 
   // Setup the Firebase cloud messaging
   setupFirebaseCloudMessaging();
+
+  // Setup the Firebase realtime database stream
+  setupFirebaseStreamCallbacks();
+
+  // Setup the temperature threshold values stream
+  setupFirebaseTemperatureThresholdsStream();
 }
 
 void loop() {
-  readThermometerValue();
-  readAccelerometerValues();
+  //readThermometerValue();
+  //readAccelerometerValues();
 }
 
 /*
@@ -174,10 +183,10 @@ void triggerTemperatureNotificationIfRequired(float currentTemp) {
   currentTempRounded = round(currentTemp * 10) / 10;
 
   // Trigger a notification if the current reading exceeds one of the thresholds
-  if (currentTempRounded >= HIGH_TEMP_THRESHOLD && currentTempNotificationState != HIGH_TEMP_NOTIFICATION_SENT) {
+  if (currentTempRounded >= highTempThreshold && currentTempNotificationState != HIGH_TEMP_NOTIFICATION_SENT) {
     currentTempNotificationState = HIGH_TEMP_NOTIFICATION_SENT;
     sendTemperatureNotification(currentTempRounded, HIGH_TEMP_WARNING_FLAG);
-  } else if (currentTempRounded <= LOW_TEMP_THRESHOLD && currentTempNotificationState != LOW_TEMP_NOTIFICATION_SENT) {
+  } else if (currentTempRounded <= lowTempThreshold && currentTempNotificationState != LOW_TEMP_NOTIFICATION_SENT) {
     currentTempNotificationState = LOW_TEMP_NOTIFICATION_SENT;
     sendTemperatureNotification(currentTempRounded, LOW_TEMP_WARNING_FLAG);
   } else {
@@ -422,4 +431,112 @@ void sendTemperatureNotification(float temperature, int typeOfTempWarning) {
     Serial.println("------------------------------------");
     Serial.println();
   }
+}
+
+/**
+   Setup the Firebase realtime database stream callback functions
+*/
+void setupFirebaseStreamCallbacks() {
+  Firebase.setStreamCallback(firebaseData, firebaseStreamCallback, firebaseStreamTimeoutCallback);
+}
+
+/*
+   Setup the Firebase realtime database stream of the the temperature threshold values
+*/
+void setupFirebaseTemperatureThresholdsStream() {
+  // Start the stream
+  if (!Firebase.beginStream(firebaseData, RT_DATABASE_TEMPERATURE_THRESHOLDS)) {
+    //Could not begin stream connection, then print out the error detail
+    Serial.println(firebaseData.errorReason());
+  }
+}
+
+/*
+   Callback function for the Firebase realtime database stream
+*/
+void firebaseStreamCallback(StreamData dataReceived) {
+  if (dataReceived.dataType() == "int") {
+    if (isTemperatureThresholdsUpdate(dataReceived)) {
+      if (isHighTempThresholdUpdate(dataReceived)) {
+        highTempThreshold = dataReceived.intData();
+      } else if (isLowTempThresholdUpdate(dataReceived)) {
+        lowTempThreshold = dataReceived.intData();
+      }
+    }
+
+    printTemperatureThresholds();
+    return;
+  }
+
+  if (dataReceived.dataType() == "float") {
+    if (isTemperatureThresholdsUpdate(dataReceived)) {
+      if (isHighTempThresholdUpdate(dataReceived)) {
+        highTempThreshold = dataReceived.floatData();
+      } else if (isLowTempThresholdUpdate(dataReceived)) {
+        lowTempThreshold = dataReceived.floatData();
+      }
+    }
+
+    printTemperatureThresholds();
+    return;
+  }
+
+  if (dataReceived.dataType() == "json" && isTemperatureThresholdsUpdate(dataReceived)) {
+    //Print out the value
+    //Serial.println(dataReceived.jsonString());
+
+    FirebaseJson &json = dataReceived.jsonObject();
+
+    // Iterate through the json object
+    size_t len = json.iteratorBegin();
+    String key, value = "";
+    int type = 0;
+    for (size_t i = 0; i < len; i++) {
+      json.iteratorGet(i, type, key, value);
+
+      if (isHighTempThresholdUpdate(key)) {
+        highTempThreshold = value.toFloat();
+      } else if (isLowTempThresholdUpdate(key)) {
+        lowTempThreshold = value.toFloat();
+      }
+    }
+    json.iteratorEnd();
+
+    printTemperatureThresholds();
+    return;
+  }
+}
+
+/*
+   Callback function that notifies when the stream connection is lost
+*/
+void firebaseStreamTimeoutCallback(bool timeout) {
+  if (timeout) {
+    //Stream timeout occurred
+    Serial.println("Temperature threshold values stream timeout, resume streaming...");
+  }
+}
+
+boolean isTemperatureThresholdsUpdate(StreamData dataReceived) {
+  return dataReceived.streamPath() == "/" + RT_DATABASE_TEMPERATURE_THRESHOLDS;
+}
+
+boolean isHighTempThresholdUpdate(StreamData dataReceived) {
+  return dataReceived.dataPath() == "/" + RT_DATABASE_HIGH_TEMP_THRESHOLD_KEY;
+}
+
+boolean isHighTempThresholdUpdate(String keyName) {
+  return keyName == RT_DATABASE_HIGH_TEMP_THRESHOLD_KEY;
+}
+
+boolean isLowTempThresholdUpdate(StreamData dataReceived) {
+  return dataReceived.dataPath() == "/" + RT_DATABASE_LOW_TEMP_THRESHOLD_KEY;
+}
+
+boolean isLowTempThresholdUpdate(String keyName) {
+  return keyName == RT_DATABASE_LOW_TEMP_THRESHOLD_KEY;
+}
+
+void printTemperatureThresholds() {
+  Serial.println("(Thresholds) High temp: " + String(highTempThreshold) + " Low temp: " + String(lowTempThreshold));
 }
