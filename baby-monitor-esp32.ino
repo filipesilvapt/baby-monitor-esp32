@@ -322,6 +322,10 @@ void setupFirebaseCloudMessaging() {
    target a specifc set of devices
 */
 void addDeviceTokensToFCM() {
+  // Remove the previous clients from the FCM object in order to always have
+  // an up to date list without repeated clients
+  firebaseData.fcm.clearDeviceToken();
+
   // Fetch the client tokens
   if (Firebase.getJSON(firebaseData, RT_DATABASE_CLIENT_TOKENS)) {
 
