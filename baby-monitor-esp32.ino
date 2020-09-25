@@ -79,6 +79,12 @@ float currentTemp = 0;
 float currentTempRounded = 0;
 String currentTempTimestamp = "";
 
+// Temperature notifications control
+#define HIGH_TEMP_NOTIFICATION_SENT 1
+#define TEMP_NOTIFICATION_IDLING    0
+#define LOW_TEMP_NOTIFICATION_SENT  -1
+int currentTempNotificationState = TEMP_NOTIFICATION_IDLING;
+
 // Firebase connection object
 FirebaseData firebaseData;
 
@@ -138,24 +144,44 @@ void readThermometerValue() {
     //Serial.print("*F\tTemperatura do Objeto = "); Serial.print(therm.readObjectTempF()); Serial.println("*F");
     Serial.println();
 
-    // Save the current reading in the database list
-    temps.set("temp", currentTemp);
-    temps.set("timestamp", currentTempTimestamp);
-    pushFirebaseEntry(RT_DATABASE_THERMOMETER_READINGS, temps);
+    // Save values to database
+    saveThermometerValueInDatabase(currentTemp, currentTempTimestamp);
 
-    // Save the current reading as the last reading
-    pushFirebaseFloatValue(RT_DATABASE_LAST_THERMOMETER_READING, currentTemp);
-    pushFirebaseStringValue(RT_DATABASE_LAST_THERMOMETER_READING_TIMESTAMP, currentTempTimestamp);
+    // Trigger notification if required
+    triggerTemperatureNotificationIfRequired(currentTemp);
+  }
+}
 
-    // Round the current temperature to one decimal place for better comparison
-    currentTempRounded = round(currentTemp * 10) / 10;
+/*
+   Save a temperature value and timestamp to the Firebase realtime database
+*/
+void saveThermometerValueInDatabase(float currentTemp, String currentTempTimestamp) {
+  // Save the current reading in the database list
+  temps.set("temp", currentTemp);
+  temps.set("timestamp", currentTempTimestamp);
+  pushFirebaseEntry(RT_DATABASE_THERMOMETER_READINGS, temps);
 
-    // Trigger a notification if the current reading exceeds one of the thresholds
-    if (currentTempRounded >= HIGH_TEMP_THRESHOLD) {
-      sendTemperatureNotification(currentTempRounded, HIGH_TEMP_WARNING_FLAG);
-    } else if (currentTempRounded <= LOW_TEMP_THRESHOLD) {
-      sendTemperatureNotification(currentTempRounded, LOW_TEMP_WARNING_FLAG);
-    }
+  // Save the current reading as the last reading
+  pushFirebaseFloatValue(RT_DATABASE_LAST_THERMOMETER_READING, currentTemp);
+  pushFirebaseStringValue(RT_DATABASE_LAST_THERMOMETER_READING_TIMESTAMP, currentTempTimestamp);
+}
+
+/*
+   Trigger a Firebase cloud messaging notification if the temperature value reaches a threshold
+*/
+void triggerTemperatureNotificationIfRequired(float currentTemp) {
+  // Round the current temperature to one decimal place for better comparison
+  currentTempRounded = round(currentTemp * 10) / 10;
+
+  // Trigger a notification if the current reading exceeds one of the thresholds
+  if (currentTempRounded >= HIGH_TEMP_THRESHOLD && currentTempNotificationState != HIGH_TEMP_NOTIFICATION_SENT) {
+    currentTempNotificationState = HIGH_TEMP_NOTIFICATION_SENT;
+    sendTemperatureNotification(currentTempRounded, HIGH_TEMP_WARNING_FLAG);
+  } else if (currentTempRounded <= LOW_TEMP_THRESHOLD && currentTempNotificationState != LOW_TEMP_NOTIFICATION_SENT) {
+    currentTempNotificationState = LOW_TEMP_NOTIFICATION_SENT;
+    sendTemperatureNotification(currentTempRounded, LOW_TEMP_WARNING_FLAG);
+  } else {
+    currentTempNotificationState = TEMP_NOTIFICATION_IDLING;
   }
 }
 
