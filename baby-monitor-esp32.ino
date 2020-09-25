@@ -75,9 +75,11 @@ unsigned long goTimeAccel;
 #define HIGH_TEMP_WARNING_FLAG  1
 #define LOW_TEMP_WARNING_FLAG   -1
 
+// Temperature thresholds (changed dynamically from database stream)
+float highTempThreshold = 37.5;
+float lowTempThreshold = 36.0;
+
 // Temperature variables
-float highTempThreshold = 0;
-float lowTempThreshold = 0;
 float currentTemp = 0;
 float currentTempRounded = 0;
 String currentTempTimestamp = "";
