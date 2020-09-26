@@ -133,8 +133,8 @@ void setup() {
 }
 
 void loop() {
-  //readThermometerValue();
-  //readAccelerometerValues();
+  readThermometerValue();
+  readAccelerometerValues();
 }
 
 /*
