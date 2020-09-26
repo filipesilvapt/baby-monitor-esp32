@@ -191,7 +191,7 @@ void triggerTemperatureNotificationIfRequired(float currentTemp) {
   } else if (currentTempRounded <= lowTempThreshold && currentTempNotificationState != LOW_TEMP_NOTIFICATION_SENT) {
     currentTempNotificationState = LOW_TEMP_NOTIFICATION_SENT;
     sendTemperatureNotification(currentTempRounded, LOW_TEMP_WARNING_FLAG);
-  } else {
+  } else if (currentTempRounded < highTempThreshold && currentTempRounded > lowTempThreshold) {
     currentTempNotificationState = TEMP_NOTIFICATION_IDLING;
   }
 }
