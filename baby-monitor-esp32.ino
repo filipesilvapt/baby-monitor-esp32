@@ -9,6 +9,12 @@
 #include <sstream>
 
 /*
+  Libraries - List management
+  QList v0.6.7
+*/
+#include <QList.h>
+
+/*
    Libraries - Communications
    WiFi comes within the ESP32 library
    Firebase ESP32 Client by Mobizt v3.7.6
@@ -88,6 +94,11 @@ String currentTempTimestamp = "";
 #define TEMP_NOTIFICATION_IDLING    0
 #define LOW_TEMP_NOTIFICATION_SENT  -1
 int currentTempNotificationState = TEMP_NOTIFICATION_IDLING;
+
+// Acceleration variables for deviation calculation
+#define MAX_ACCEL_DEVIATION_PERCENT 10.24
+#define MAX_ACCEL_VALUES_IN_LIST    5
+QList<float> accelList;
 
 // Firebase connection object
 FirebaseData firebaseData;
@@ -217,12 +228,74 @@ void readAccelerometerValues() {
     Serial.print("\t(m/s^2)");
     Serial.println();
 
-    // Save the current reading in the database list
-    accels.set("x_axis", event.acceleration.x);
-    accels.set("y_axis", event.acceleration.y);
-    accels.set("z_axis", event.acceleration.z);
-    accels.set("timestamp", getTimestampUTC());
-    pushFirebaseJsonEntry(RT_DATABASE_ACCELEROMETER_READINGS, accels);
+    // Save values to database
+    saveAccelerationValueInDatabase(event.acceleration);
+
+    // Trigger notification if required
+    triggerSleepStateNotificationIfRequired(event.acceleration.z);
+  }
+}
+
+/*
+   Save an acceleration value to the Firebase realtime database
+*/
+void saveAccelerationValueInDatabase(sensors_vec_t &accelEvent) {
+  // Save the current reading in the database list
+  accels.set("x_axis", accelEvent.x);
+  accels.set("y_axis", accelEvent.y);
+  accels.set("z_axis", accelEvent.z);
+  accels.set("timestamp", getTimestampUTC());
+  pushFirebaseJsonEntry(RT_DATABASE_ACCELEROMETER_READINGS, accels);
+}
+
+/*
+   Trigger a Firebase cloud messaging notification if the current Z Axis value has
+   a deviation higher than the max permitted by correlating it to the mean of the
+   previous values present in the list
+*/
+void triggerSleepStateNotificationIfRequired(float zAxisValue) {
+  int accelListSize = accelList.size();
+
+  // Only check the deviation if we have the right amount of values in the list
+  if (accelListSize < MAX_ACCEL_VALUES_IN_LIST) {
+    accelList.push_front(zAxisValue);
+    return;
+  }
+
+  // Calculate the mean of the values in the list
+  float accelListMean = 0.0;
+  for (size_t i = 0; i < accelListSize; i++) {
+    accelListMean = accelListMean + accelList.get(i);
+  }
+  accelListMean = accelListMean / accelListSize; //4.644
+
+  // Calculate the current deviation
+  float deviation = 100 - (zAxisValue * 100 / accelListMean); // 100 - (4.62 * 100 / 4.644) = 0.54
+
+  // Normalize the deviation
+  if (deviation < 0) {
+    deviation = deviation * -1;
+  }
+
+  Serial.println("Deviation is: " + String(deviation) + "%");
+
+  // Check if the deviation surpasses the limit
+  if (deviation >= MAX_ACCEL_DEVIATION_PERCENT) {
+    Serial.println();
+    Serial.println("*********************************************************");
+    Serial.println("*********************************************************");
+    Serial.println("Max deviation surpassed: " + String(deviation) + "%");
+    Serial.println("*********************************************************");
+    Serial.println("*********************************************************");
+    Serial.println();
+
+    // Update the sleep state variable in the Firebase realtime database
+
+    // Send the sleep state notification
+
+    // Clean the list and start filling it with new values
+    accelList.clear();
+    accelList.push_front(zAxisValue);
   }
 }
 
