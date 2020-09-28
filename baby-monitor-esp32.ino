@@ -64,7 +64,6 @@ unsigned long goTimeAccel;
 #define RT_DATABASE_CLIENT_TOKENS RT_DATABASE_NODE_ID + "/client_tokens"
 #define RT_DATABASE_THERMOMETER_READINGS RT_DATABASE_NODE_ID + "/thermometer_readings"
 #define RT_DATABASE_LAST_THERMOMETER_READING RT_DATABASE_NODE_ID + "/last_thermometer_reading"
-#define RT_DATABASE_LAST_THERMOMETER_READING_TIMESTAMP RT_DATABASE_NODE_ID + "/last_thermometer_reading_timestamp"
 #define RT_DATABASE_ACCELEROMETER_READINGS RT_DATABASE_NODE_ID + "/accelerometer_readings"
 #define RT_DATABASE_THERMOMETER_LAST_SLEEP_STATE RT_DATABASE_NODE_ID + "/last_sleep_state"
 #define RT_DATABASE_TEMPERATURE_THRESHOLDS RT_DATABASE_NODE_ID + "/temperature_thresholds"
@@ -170,11 +169,10 @@ void saveThermometerValueInDatabase(float currentTemp, String currentTempTimesta
   // Save the current reading in the database list
   temps.set("temp", currentTemp);
   temps.set("timestamp", currentTempTimestamp);
-  pushFirebaseEntry(RT_DATABASE_THERMOMETER_READINGS, temps);
+  pushFirebaseJsonEntry(RT_DATABASE_THERMOMETER_READINGS, temps);
 
   // Save the current reading as the last reading
-  pushFirebaseFloatValue(RT_DATABASE_LAST_THERMOMETER_READING, currentTemp);
-  pushFirebaseStringValue(RT_DATABASE_LAST_THERMOMETER_READING_TIMESTAMP, currentTempTimestamp);
+  setFirebaseJsonEntry(RT_DATABASE_LAST_THERMOMETER_READING, temps);
 }
 
 /*
@@ -224,7 +222,7 @@ void readAccelerometerValues() {
     accels.set("y_axis", event.acceleration.y);
     accels.set("z_axis", event.acceleration.z);
     accels.set("timestamp", getTimestampUTC());
-    pushFirebaseEntry(RT_DATABASE_ACCELEROMETER_READINGS, accels);
+    pushFirebaseJsonEntry(RT_DATABASE_ACCELEROMETER_READINGS, accels);
   }
 }
 
@@ -282,7 +280,7 @@ void setupNTPServer() {
 /*
    Push a json object to the given database path in Firebase
 */
-void pushFirebaseEntry(const String &databasePath, FirebaseJson &jsonToPush) {
+void pushFirebaseJsonEntry(const String &databasePath, FirebaseJson &jsonToPush) {
   if (Firebase.pushJSON(firebaseData, databasePath, jsonToPush)) {
     //Serial.println(firebaseData.dataPath() + "/" + firebaseData.pushName());
   } else {
@@ -291,21 +289,10 @@ void pushFirebaseEntry(const String &databasePath, FirebaseJson &jsonToPush) {
 }
 
 /*
-   Set the float value into the given database path in Firebase
+   Set the json value into the given database path in Firebase
 */
-void pushFirebaseFloatValue(const String &databasePath, float floatValue) {
-  if (Firebase.setFloat(firebaseData, databasePath, floatValue)) {
-    //Serial.println(firebaseData.dataPath() + "/" + firebaseData.pushName());
-  } else {
-    Serial.println(firebaseData.errorReason());
-  }
-}
-
-/*
-   Set the string value into the given database path in Firebase
-*/
-void pushFirebaseStringValue(const String &databasePath, String stringValue) {
-  if (Firebase.setString(firebaseData, databasePath, stringValue)) {
+void setFirebaseJsonEntry(const String &databasePath, FirebaseJson &jsonToSet) {
+  if (Firebase.setJSON(firebaseData, databasePath, jsonToSet)) {
     //Serial.println(firebaseData.dataPath() + "/" + firebaseData.pushName());
   } else {
     Serial.println(firebaseData.errorReason());
