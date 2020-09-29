@@ -267,10 +267,10 @@ void triggerSleepStateNotificationIfRequired(float zAxisValue) {
   for (size_t i = 0; i < accelListSize; i++) {
     accelListMean = accelListMean + accelList.get(i);
   }
-  accelListMean = accelListMean / accelListSize; //4.644
+  accelListMean = accelListMean / accelListSize;
 
   // Calculate the current deviation
-  float deviation = 100 - (zAxisValue * 100 / accelListMean); // 100 - (4.62 * 100 / 4.644) = 0.54
+  float deviation = 100 - (zAxisValue * 100 / accelListMean);
 
   // Normalize the deviation
   if (deviation < 0) {
@@ -295,6 +295,10 @@ void triggerSleepStateNotificationIfRequired(float zAxisValue) {
 
     // Clean the list and start filling it with new values
     accelList.clear();
+    accelList.push_front(zAxisValue);
+  } else {
+    // Remove the last item in the list and insert the current one at the top
+    accelList.pop_back();
     accelList.push_front(zAxisValue);
   }
 }
