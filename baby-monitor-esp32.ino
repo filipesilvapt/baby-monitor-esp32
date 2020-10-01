@@ -100,6 +100,13 @@ int currentTempNotificationState = TEMP_NOTIFICATION_IDLING;
 #define MAX_ACCEL_VALUES_IN_LIST    5
 QList<float> accelList;
 
+// Sleep state notification control
+#define MAX_DEVIATION_TIMESTAMPS_IN_LIST  5
+#define MIN_DEVIATION_TIME_DIFF_FOR_NOTIF 120000 // 2 minutes in milliseconds
+#define SLEEP_STATE_RESET_INTERVAL        180000 // 3 minutes in milliseconds
+int lastSleepStateNotificationSentAt = 0;
+QList<long> deviationTimestamps;
+
 // Firebase connection object
 FirebaseData firebaseData;
 
@@ -256,12 +263,43 @@ void saveAccelerationValueInDatabase(sensors_vec_t &accelEvent) {
 void triggerSleepStateNotificationIfRequired(float zAxisValue) {
   int accelListSize = accelList.size();
 
-  // Only check the deviation if we have the right amount of values in the list
+  // Only check the deviation if we have the right amount of acceleration values in the list
   if (accelListSize < MAX_ACCEL_VALUES_IN_LIST) {
     accelList.push_front(zAxisValue);
     return;
   }
 
+  float deviation = calculateAccelerationDeviation(zAxisValue, accelListSize);
+
+  // Check if the deviation surpasses the limit
+  if (deviation >= MAX_ACCEL_DEVIATION_PERCENT) {
+    reactUponSurpassedDeviation(zAxisValue, deviation);
+  } else {
+    // Remove the last item in the list and insert the current one at the top
+    accelList.pop_back();
+    accelList.push_front(zAxisValue);
+
+    // Check if enough time has passed since the last disturbance so that we can reset
+    // the sleep state in the Firebase realtime database
+    if (lastSleepStateNotificationSentAt != 0 && millis() - lastSleepStateNotificationSentAt >= SLEEP_STATE_RESET_INTERVAL) {
+      Serial.println();
+      Serial.println("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++");
+      Serial.println("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++");
+      Serial.println("Resetting the sleep state");
+      Serial.println("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++");
+      Serial.println("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++");
+      Serial.println();
+
+      // Reset timestamp
+      lastSleepStateNotificationSentAt = 0;
+
+      // Update the sleep state variable in the Firebase realtime database
+
+    }
+  }
+}
+
+float calculateAccelerationDeviation(float zAxisValue, int accelListSize) {
   // Calculate the mean of the values in the list
   float accelListMean = 0.0;
   for (size_t i = 0; i < accelListSize; i++) {
@@ -279,27 +317,53 @@ void triggerSleepStateNotificationIfRequired(float zAxisValue) {
 
   Serial.println("Deviation is: " + String(deviation) + "%");
 
-  // Check if the deviation surpasses the limit
-  if (deviation >= MAX_ACCEL_DEVIATION_PERCENT) {
-    Serial.println();
-    Serial.println("*********************************************************");
-    Serial.println("*********************************************************");
-    Serial.println("Max deviation surpassed: " + String(deviation) + "%");
-    Serial.println("*********************************************************");
-    Serial.println("*********************************************************");
-    Serial.println();
+  return deviation;
+}
 
-    // Update the sleep state variable in the Firebase realtime database
+void reactUponSurpassedDeviation(float zAxisValue, float deviation) {
+  Serial.println();
+  Serial.println("*********************************************************");
+  Serial.println("*********************************************************");
+  Serial.println("Max deviation surpassed: " + String(deviation) + "%");
+  Serial.println("*********************************************************");
+  Serial.println("*********************************************************");
+  Serial.println();
 
-    // Send the sleep state notification
+  // Clean the list and start filling it with new values
+  accelList.clear();
+  accelList.push_front(zAxisValue);
 
-    // Clean the list and start filling it with new values
-    accelList.clear();
-    accelList.push_front(zAxisValue);
-  } else {
-    // Remove the last item in the list and insert the current one at the top
-    accelList.pop_back();
-    accelList.push_front(zAxisValue);
+  // Register the current deviation timestamp
+  deviationTimestamps.push_front(millis());
+
+  if (deviationTimestamps.size() == MAX_DEVIATION_TIMESTAMPS_IN_LIST) {
+    long deviationsInterval = deviationTimestamps.get(0) - deviationTimestamps.get(MAX_DEVIATION_TIMESTAMPS_IN_LIST - 1);
+
+    Serial.println("Deviations interval = " + String(deviationsInterval) + " millis");
+
+    if (deviationsInterval <= MIN_DEVIATION_TIME_DIFF_FOR_NOTIF) {
+      // Update the last time the sleep state notification was sent
+      lastSleepStateNotificationSentAt = millis();
+
+      // Clear the list for a fresh start
+      deviationTimestamps.clear();
+
+      // Update the sleep state variable in the Firebase realtime database
+
+      // Send the sleep state notification
+
+      Serial.println();
+      Serial.println("---------------------------------------------------------");
+      Serial.println("---------------------------------------------------------");
+      Serial.println("Notification sent for sleep state disturbance");
+      Serial.println("---------------------------------------------------------");
+      Serial.println("---------------------------------------------------------");
+      Serial.println();
+    } else {
+      // Remove the oldest deviation timestamp registered in the list in order to keep it updated and
+      // within the size limit
+      deviationTimestamps.pop_back();
+    }
   }
 }
 
