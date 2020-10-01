@@ -68,17 +68,26 @@ unsigned long goTimeAccel;
 // The Firebase RT Database Paths
 #define RT_DATABASE_NODE_ID String("node_01")
 #define RT_DATABASE_CLIENT_TOKENS RT_DATABASE_NODE_ID + "/client_tokens"
+#define RT_DATABASE_BABY_NAME RT_DATABASE_NODE_ID + "/baby_name"
 #define RT_DATABASE_THERMOMETER_READINGS RT_DATABASE_NODE_ID + "/thermometer_readings"
 #define RT_DATABASE_LAST_THERMOMETER_READING RT_DATABASE_NODE_ID + "/last_thermometer_reading"
 #define RT_DATABASE_ACCELEROMETER_READINGS RT_DATABASE_NODE_ID + "/accelerometer_readings"
-#define RT_DATABASE_THERMOMETER_LAST_SLEEP_STATE RT_DATABASE_NODE_ID + "/last_sleep_state"
+#define RT_DATABASE_LAST_SLEEP_STATE RT_DATABASE_NODE_ID + "/last_sleep_state"
 #define RT_DATABASE_TEMPERATURE_THRESHOLDS RT_DATABASE_NODE_ID + "/temperature_thresholds"
 #define RT_DATABASE_HIGH_TEMP_THRESHOLD_KEY String("high_temp")
 #define RT_DATABASE_LOW_TEMP_THRESHOLD_KEY String("low_temp")
 
+// Baby name
+String firebaseBabyName = "";
+
 // Temperature types of warnings
 #define HIGH_TEMP_WARNING_FLAG  1
 #define LOW_TEMP_WARNING_FLAG   -1
+
+// Sleep state types
+#define SLEEP_STATE_SLEEPING  0
+#define SLEEP_STATE_AGITATED  1
+#define SLEEP_STATE_DISTURBED 2
 
 // Temperature thresholds (changed dynamically from database stream)
 float highTempThreshold = 37.5;
@@ -106,6 +115,10 @@ QList<float> accelList;
 #define SLEEP_STATE_RESET_INTERVAL        180000 // 3 minutes in milliseconds
 int lastSleepStateNotificationSentAt = 0;
 QList<long> deviationTimestamps;
+
+// Notification types
+#define NOTIFICATION_TYPE_TEMPERATURE 1
+#define NOTIFICATION_TYPE_SLEEP_STATE 2
 
 // Firebase connection object
 FirebaseData firebaseData;
@@ -143,10 +156,13 @@ void setup() {
   setupFirebaseCloudMessaging();
 
   // Setup the Firebase realtime database stream
-  setupFirebaseStreamCallbacks();
+  //setupFirebaseStreamCallbacks();
 
   // Setup the temperature threshold values stream
-  setupFirebaseTemperatureThresholdsStream();
+  //setupFirebaseTemperatureThresholdsStream();
+
+  // Get the baby name
+  getFirebaseBabyName();
 }
 
 void loop() {
@@ -257,8 +273,9 @@ void saveAccelerationValueInDatabase(sensors_vec_t &accelEvent) {
 
 /*
    Trigger a Firebase cloud messaging notification if the current Z Axis value has
-   a deviation higher than the max permitted by correlating it to the mean of the
-   previous values present in the list
+   a deviation higher than the max permitted, by correlating it to the mean of the
+   previous values present in the list, for a certain amount of times within
+   a predefined timeframe
 */
 void triggerSleepStateNotificationIfRequired(float zAxisValue) {
   int accelListSize = accelList.size();
@@ -294,11 +311,14 @@ void triggerSleepStateNotificationIfRequired(float zAxisValue) {
       lastSleepStateNotificationSentAt = 0;
 
       // Update the sleep state variable in the Firebase realtime database
-
+      setFirebaseIntEntry(RT_DATABASE_LAST_SLEEP_STATE, SLEEP_STATE_SLEEPING);
     }
   }
 }
 
+/**
+   Calculate the deviation of a given value in comparison to the mean of the previous ones
+*/
 float calculateAccelerationDeviation(float zAxisValue, int accelListSize) {
   // Calculate the mean of the values in the list
   float accelListMean = 0.0;
@@ -320,6 +340,10 @@ float calculateAccelerationDeviation(float zAxisValue, int accelListSize) {
   return deviation;
 }
 
+/**
+   A deviation surpassed the maximum permitted so, here is the logic to controll the notification
+   and sleep state database variable
+*/
 void reactUponSurpassedDeviation(float zAxisValue, float deviation) {
   Serial.println();
   Serial.println("*********************************************************");
@@ -349,8 +373,10 @@ void reactUponSurpassedDeviation(float zAxisValue, float deviation) {
       deviationTimestamps.clear();
 
       // Update the sleep state variable in the Firebase realtime database
+      setFirebaseIntEntry(RT_DATABASE_LAST_SLEEP_STATE, SLEEP_STATE_DISTURBED);
 
       // Send the sleep state notification
+      sendSleepStateNotification(firebaseBabyName);
 
       Serial.println();
       Serial.println("---------------------------------------------------------");
@@ -434,6 +460,17 @@ void pushFirebaseJsonEntry(const String &databasePath, FirebaseJson &jsonToPush)
 */
 void setFirebaseJsonEntry(const String &databasePath, FirebaseJson &jsonToSet) {
   if (Firebase.setJSON(firebaseData, databasePath, jsonToSet)) {
+    //Serial.println(firebaseData.dataPath() + "/" + firebaseData.pushName());
+  } else {
+    Serial.println(firebaseData.errorReason());
+  }
+}
+
+/*
+   Set the int value into the given database path in Firebase
+*/
+void setFirebaseIntEntry(const String &databasePath, int intToSet) {
+  if (Firebase.setInt(firebaseData, databasePath, intToSet)) {
     //Serial.println(firebaseData.dataPath() + "/" + firebaseData.pushName());
   } else {
     Serial.println(firebaseData.errorReason());
@@ -547,7 +584,7 @@ void sendTemperatureNotification(float temperature, int typeOfTempWarning) {
   }
 
   // Define the data object sent inside the notification
-  firebaseData.fcm.setDataMessage("{\"temperature\":" + String(finalTemperature.c_str()) + ", \"typeOfTempWarning\":" + String(typeOfTempWarning) + "}");
+  firebaseData.fcm.setDataMessage("{\"notification_type\":" + String(NOTIFICATION_TYPE_TEMPERATURE) + ", \"temperature\":" + String(finalTemperature.c_str()) + ", \"type_of_temp_warning\":" + String(typeOfTempWarning) + "}");
 
   // Send the notification to all of the registerd clients
   if (Firebase.broadcastMessage(firebaseData)) {
@@ -560,6 +597,53 @@ void sendTemperatureNotification(float temperature, int typeOfTempWarning) {
     Serial.println("REASON: " + firebaseData.errorReason());
     Serial.println("------------------------------------");
     Serial.println();
+  }
+}
+
+/*
+   Send a notification to the registered clients about the disturbance of the sleep state
+*/
+void sendSleepStateNotification(String babyName) {
+  Serial.println("------------------------------------");
+  Serial.println("Sending sleep state notification");
+
+  // Add the devices to which we want to send the notification
+  addDeviceTokensToFCM();
+
+  // Define the title and body of the notification message according to the type of warning
+  firebaseData.fcm.setNotifyMessage("Sleep Disturbed", babyName + " is having trouble sleeping");
+
+  // Define the data object sent inside the notification
+  firebaseData.fcm.setDataMessage("{\"notification_type\":" + String(NOTIFICATION_TYPE_SLEEP_STATE) + ", \"baby_name\":\"" + babyName + "\"}");
+
+  // Send the notification to all of the registerd clients
+  if (Firebase.broadcastMessage(firebaseData)) {
+    Serial.println("PASSED");
+    Serial.println(firebaseData.fcm.getSendResult());
+    Serial.println("------------------------------------");
+    Serial.println();
+  } else {
+    Serial.println("FAILED");
+    Serial.println("REASON: " + firebaseData.errorReason());
+    Serial.println("------------------------------------");
+    Serial.println();
+  }
+}
+
+/**
+   Get the baby name from the Firebase realtime database
+*/
+void getFirebaseBabyName() {
+  // Fetch the baby name
+  if (Firebase.getString(firebaseData, RT_DATABASE_BABY_NAME)) {
+
+    if (firebaseData.dataType() == "string") {
+      firebaseBabyName = firebaseData.stringData();
+
+      Serial.println("Baby name is: " + firebaseBabyName);
+    } else {
+      Serial.println(firebaseData.errorReason());
+    }
   }
 }
 
