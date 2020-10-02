@@ -70,7 +70,6 @@ unsigned long goTimeAccel;
 #define RT_DATABASE_CLIENT_TOKENS RT_DATABASE_NODE_ID + "/client_tokens"
 #define RT_DATABASE_BABY_NAME RT_DATABASE_NODE_ID + "/baby_name"
 #define RT_DATABASE_THERMOMETER_READINGS RT_DATABASE_NODE_ID + "/thermometer_readings"
-#define RT_DATABASE_LAST_THERMOMETER_READING RT_DATABASE_NODE_ID + "/last_thermometer_reading"
 #define RT_DATABASE_ACCELEROMETER_READINGS RT_DATABASE_NODE_ID + "/accelerometer_readings"
 #define RT_DATABASE_LAST_SLEEP_STATE RT_DATABASE_NODE_ID + "/last_sleep_state"
 #define RT_DATABASE_TEMPERATURE_THRESHOLDS RT_DATABASE_NODE_ID + "/temperature_thresholds"
@@ -205,8 +204,6 @@ void saveThermometerValueInDatabase(float currentTemp, String currentTempTimesta
   temps.set("timestamp", currentTempTimestamp);
   pushFirebaseJsonEntry(RT_DATABASE_THERMOMETER_READINGS, temps);
 
-  // Save the current reading as the last reading
-  setFirebaseJsonEntry(RT_DATABASE_LAST_THERMOMETER_READING, temps);
 }
 
 /*
@@ -455,17 +452,7 @@ void pushFirebaseJsonEntry(const String &databasePath, FirebaseJson &jsonToPush)
   }
 }
 
-/*
-   Set the json value into the given database path in Firebase
 */
-void setFirebaseJsonEntry(const String &databasePath, FirebaseJson &jsonToSet) {
-  if (Firebase.setJSON(firebaseData, databasePath, jsonToSet)) {
-    //Serial.println(firebaseData.dataPath() + "/" + firebaseData.pushName());
-  } else {
-    Serial.println(firebaseData.errorReason());
-  }
-}
-
 /*
    Set the int value into the given database path in Firebase
 */
