@@ -72,6 +72,7 @@ unsigned long goTimeAccel;
 #define RT_DATABASE_THERMOMETER_READINGS RT_DATABASE_NODE_ID + "/thermometer_readings"
 #define RT_DATABASE_ACCELEROMETER_READINGS RT_DATABASE_NODE_ID + "/accelerometer_readings"
 #define RT_DATABASE_LAST_SLEEP_STATE RT_DATABASE_NODE_ID + "/last_sleep_state"
+#define RT_DATABASE_SLEEP_DEVIATIONS RT_DATABASE_NODE_ID + "/sleep_deviations"
 #define RT_DATABASE_TEMPERATURE_THRESHOLDS RT_DATABASE_NODE_ID + "/temperature_thresholds"
 #define RT_DATABASE_HIGH_TEMP_THRESHOLD_KEY String("high_temp")
 #define RT_DATABASE_LOW_TEMP_THRESHOLD_KEY String("low_temp")
@@ -112,6 +113,8 @@ QList<float> accelList;
 #define MAX_DEVIATION_TIMESTAMPS_IN_LIST  5
 #define MIN_DEVIATION_TIME_DIFF_FOR_NOTIF 120000 // 2 minutes in milliseconds
 #define SLEEP_STATE_RESET_INTERVAL        180000 // 3 minutes in milliseconds
+#define DEVIATION_TYPE_INTERMEDIARY       1
+#define DEVIATION_TYPE_NOTIFICATION       2
 int lastSleepStateNotificationSentAt = 0;
 QList<long> deviationTimestamps;
 
@@ -125,6 +128,7 @@ FirebaseData firebaseData;
 // Firebase realtime database objects
 FirebaseJson temps;
 FirebaseJson accels;
+FirebaseJson deviations;
 
 void setup() {
   Serial.begin(115200);
@@ -203,7 +207,6 @@ void saveThermometerValueInDatabase(float currentTemp, String currentTempTimesta
   temps.set("temp", currentTemp);
   temps.set("timestamp", currentTempTimestamp);
   pushFirebaseJsonEntry(RT_DATABASE_THERMOMETER_READINGS, temps);
-
 }
 
 /*
@@ -249,10 +252,10 @@ void readAccelerometerValues() {
     Serial.println();
 
     // Save values to database
-    saveAccelerationValueInDatabase(event.acceleration);
+    //saveAccelerationValueInDatabase(event.acceleration);
 
     // Trigger notification if required
-    triggerSleepStateNotificationIfRequired(event.acceleration.z);
+    evaluateAccelerationDeviation(event.acceleration.z);
   }
 }
 
@@ -269,12 +272,12 @@ void saveAccelerationValueInDatabase(sensors_vec_t &accelEvent) {
 }
 
 /*
-   Trigger a Firebase cloud messaging notification if the current Z Axis value has
-   a deviation higher than the max permitted, by correlating it to the mean of the
-   previous values present in the list, for a certain amount of times within
-   a predefined timeframe
+   Evaluate the deviation of the current Z Axis value by correlating it to the mean of the
+   previous values present in the list, and checking if it's higher than the max permitted.
+   Also, a notification will be triggered if a certain amount of deviations occur within
+   a predefined timeframe.
 */
-void triggerSleepStateNotificationIfRequired(float zAxisValue) {
+void evaluateAccelerationDeviation(float zAxisValue) {
   int accelListSize = accelList.size();
 
   // Only check the deviation if we have the right amount of acceleration values in the list
@@ -350,6 +353,8 @@ void reactUponSurpassedDeviation(float zAxisValue, float deviation) {
   Serial.println("*********************************************************");
   Serial.println();
 
+  int typeOfDeviation = DEVIATION_TYPE_INTERMEDIARY;
+
   // Clean the list and start filling it with new values
   accelList.clear();
   accelList.push_front(zAxisValue);
@@ -363,6 +368,8 @@ void reactUponSurpassedDeviation(float zAxisValue, float deviation) {
     Serial.println("Deviations interval = " + String(deviationsInterval) + " millis");
 
     if (deviationsInterval <= MIN_DEVIATION_TIME_DIFF_FOR_NOTIF) {
+      typeOfDeviation = DEVIATION_TYPE_NOTIFICATION;
+
       // Update the last time the sleep state notification was sent
       lastSleepStateNotificationSentAt = millis();
 
@@ -388,6 +395,12 @@ void reactUponSurpassedDeviation(float zAxisValue, float deviation) {
       deviationTimestamps.pop_back();
     }
   }
+
+  // Save the current deviation
+  deviations.set("type_of_deviation", typeOfDeviation);
+  deviations.set("deviation", deviation);
+  deviations.set("timestamp", getTimestampUTC());
+  pushFirebaseJsonEntry(RT_DATABASE_SLEEP_DEVIATIONS, deviations);
 }
 
 /*
@@ -452,7 +465,6 @@ void pushFirebaseJsonEntry(const String &databasePath, FirebaseJson &jsonToPush)
   }
 }
 
-*/
 /*
    Set the int value into the given database path in Firebase
 */
