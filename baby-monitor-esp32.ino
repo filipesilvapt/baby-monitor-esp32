@@ -10,7 +10,7 @@
 
 /*
   Libraries - List management
-  QList v0.6.7
+  QList by Martin Dagarin (SloCompTech) v0.6.7
 */
 #include <QList.h>
 
@@ -70,9 +70,7 @@ unsigned long goTimeAccel;
 #define RT_DATABASE_CLIENT_TOKENS RT_DATABASE_NODE_ID + "/client_tokens"
 #define RT_DATABASE_BABY_NAME RT_DATABASE_NODE_ID + "/baby_name"
 #define RT_DATABASE_THERMOMETER_READINGS RT_DATABASE_NODE_ID + "/thermometer_readings"
-#define RT_DATABASE_ACCELEROMETER_READINGS RT_DATABASE_NODE_ID + "/accelerometer_readings"
-#define RT_DATABASE_LAST_SLEEP_STATE RT_DATABASE_NODE_ID + "/last_sleep_state"
-#define RT_DATABASE_SLEEP_DEVIATIONS RT_DATABASE_NODE_ID + "/sleep_deviations"
+#define RT_DATABASE_SLEEP_STATES RT_DATABASE_NODE_ID + "/sleep_states"
 #define RT_DATABASE_TEMPERATURE_THRESHOLDS RT_DATABASE_NODE_ID + "/temperature_thresholds"
 #define RT_DATABASE_HIGH_TEMP_THRESHOLD_KEY String("high_temp")
 #define RT_DATABASE_LOW_TEMP_THRESHOLD_KEY String("low_temp")
@@ -113,8 +111,6 @@ QList<float> accelList;
 #define MAX_DEVIATION_TIMESTAMPS_IN_LIST  5
 #define MIN_DEVIATION_TIME_DIFF_FOR_NOTIF 120000 // 2 minutes in milliseconds
 #define SLEEP_STATE_RESET_INTERVAL        180000 // 3 minutes in milliseconds
-#define DEVIATION_TYPE_INTERMEDIARY       1
-#define DEVIATION_TYPE_NOTIFICATION       2
 int lastSleepStateNotificationSentAt = 0;
 QList<long> deviationTimestamps;
 
@@ -127,8 +123,7 @@ FirebaseData firebaseData;
 
 // Firebase realtime database objects
 FirebaseJson temps;
-FirebaseJson accels;
-FirebaseJson deviations;
+FirebaseJson sleepStates;
 
 void setup() {
   Serial.begin(115200);
@@ -181,14 +176,19 @@ void readThermometerValue() {
     currentTemp = therm.readObjectTempC();
     currentTempTimestamp = getTimestampUTC();
 
-    // Print in Console
     goTimeTherm = millis() + nextTimeTherm;
-    Serial.println("  ");
-    Serial.println("Leitura de Temperatura: ");
-    Serial.print("Temperatura Ambiente = "); Serial.print(therm.readAmbientTempC());
-    Serial.print("ºC\tTemperatura do Objeto = "); Serial.print(currentTemp); Serial.println("*C");
-    //Serial.print("Temperatura Ambiente = "); Serial.print(therm.readAmbientTempF());
-    //Serial.print("*F\tTemperatura do Objeto = "); Serial.print(therm.readObjectTempF()); Serial.println("*F");
+
+    // Print in Console
+    Serial.println();
+    Serial.println("|||||||||||||||||||||||||||||||||||||||||||||||||||||||||");
+    Serial.println("|||||||||||||||||||||||||||||||||||||||||||||||||||||||||");
+    Serial.println("|||||||||||||||||||Temperature reading|||||||||||||||||||");
+    Serial.print("Ambient temperature = "); Serial.print(therm.readAmbientTempC());
+    Serial.print("ºC\tObject temperature = "); Serial.print(currentTemp); Serial.println("ºC");
+    //Serial.print("Ambient temperature = "); Serial.print(therm.readAmbientTempF());
+    //Serial.print("*F\tObject temperature = "); Serial.print(therm.readObjectTempF()); Serial.println("ºF");
+    Serial.println("|||||||||||||||||||||||||||||||||||||||||||||||||||||||||");
+    Serial.println("|||||||||||||||||||||||||||||||||||||||||||||||||||||||||");
     Serial.println();
 
     // Save values to database
@@ -203,7 +203,6 @@ void readThermometerValue() {
    Save a temperature value and timestamp to the Firebase realtime database
 */
 void saveThermometerValueInDatabase(float currentTemp, String currentTempTimestamp) {
-  // Save the current reading in the database list
   temps.set("temp", currentTemp);
   temps.set("timestamp", currentTempTimestamp);
   pushFirebaseJsonEntry(RT_DATABASE_THERMOMETER_READINGS, temps);
@@ -235,7 +234,7 @@ void readAccelerometerValues() {
   if (millis() >= goTimeAccel) {
     goTimeAccel = millis() + nextTimeAccel;
 
-    // Get X Y and Z data at once
+    // Get X, Y and Z data at once
     accel.read();
 
     // Get a new sensor event, normalized
@@ -243,32 +242,17 @@ void readAccelerometerValues() {
     accel.getEvent(&event);
 
     // Display the results in m/s^2
-    Serial.print("Aceleração:");
-    Serial.print("\tEixo oX: "); Serial.print(event.acceleration.x);
-    Serial.print("\tEixo oY: "); Serial.print(event.acceleration.y);
-    Serial.print("\tEixo oZ: ");
+    Serial.print("Acceleration:");
+    Serial.print("\tX Axis: "); Serial.print(event.acceleration.x);
+    Serial.print("\tY Axis: "); Serial.print(event.acceleration.y);
+    Serial.print("\tZ Axis: ");
     Serial.print(event.acceleration.z);
     Serial.print("\t(m/s^2)");
     Serial.println();
 
-    // Save values to database
-    //saveAccelerationValueInDatabase(event.acceleration);
-
     // Trigger notification if required
     evaluateAccelerationDeviation(event.acceleration.z);
   }
-}
-
-/*
-   Save an acceleration value to the Firebase realtime database
-*/
-void saveAccelerationValueInDatabase(sensors_vec_t &accelEvent) {
-  // Save the current reading in the database list
-  accels.set("x_axis", accelEvent.x);
-  accels.set("y_axis", accelEvent.y);
-  accels.set("z_axis", accelEvent.z);
-  accels.set("timestamp", getTimestampUTC());
-  pushFirebaseJsonEntry(RT_DATABASE_ACCELEROMETER_READINGS, accels);
 }
 
 /*
@@ -310,13 +294,13 @@ void evaluateAccelerationDeviation(float zAxisValue) {
       // Reset timestamp
       lastSleepStateNotificationSentAt = 0;
 
-      // Update the sleep state variable in the Firebase realtime database
-      setFirebaseIntEntry(RT_DATABASE_LAST_SLEEP_STATE, SLEEP_STATE_SLEEPING);
+      // Push the new sleep state into the Firebase realtime database
+      saveSleepStateValueInDatabase(SLEEP_STATE_SLEEPING);
     }
   }
 }
 
-/**
+/*
    Calculate the deviation of a given value in comparison to the mean of the previous ones
 */
 float calculateAccelerationDeviation(float zAxisValue, int accelListSize) {
@@ -340,7 +324,7 @@ float calculateAccelerationDeviation(float zAxisValue, int accelListSize) {
   return deviation;
 }
 
-/**
+/*
    A deviation surpassed the maximum permitted so, here is the logic to controll the notification
    and sleep state database variable
 */
@@ -352,8 +336,6 @@ void reactUponSurpassedDeviation(float zAxisValue, float deviation) {
   Serial.println("*********************************************************");
   Serial.println("*********************************************************");
   Serial.println();
-
-  int typeOfDeviation = DEVIATION_TYPE_INTERMEDIARY;
 
   // Clean the list and start filling it with new values
   accelList.clear();
@@ -368,16 +350,14 @@ void reactUponSurpassedDeviation(float zAxisValue, float deviation) {
     Serial.println("Deviations interval = " + String(deviationsInterval) + " millis");
 
     if (deviationsInterval <= MIN_DEVIATION_TIME_DIFF_FOR_NOTIF) {
-      typeOfDeviation = DEVIATION_TYPE_NOTIFICATION;
-
       // Update the last time the sleep state notification was sent
       lastSleepStateNotificationSentAt = millis();
 
       // Clear the list for a fresh start
       deviationTimestamps.clear();
 
-      // Update the sleep state variable in the Firebase realtime database
-      setFirebaseIntEntry(RT_DATABASE_LAST_SLEEP_STATE, SLEEP_STATE_DISTURBED);
+      // Push the new sleep state into the Firebase realtime database
+      saveSleepStateValueInDatabase(SLEEP_STATE_DISTURBED);
 
       // Send the sleep state notification
       sendSleepStateNotification(firebaseBabyName);
@@ -395,12 +375,15 @@ void reactUponSurpassedDeviation(float zAxisValue, float deviation) {
       deviationTimestamps.pop_back();
     }
   }
+}
 
-  // Save the current deviation
-  deviations.set("type_of_deviation", typeOfDeviation);
-  deviations.set("deviation", deviation);
-  deviations.set("timestamp", getTimestampUTC());
-  pushFirebaseJsonEntry(RT_DATABASE_SLEEP_DEVIATIONS, deviations);
+/*
+   Save a sleep state value and timestamp to the Firebase realtime database
+*/
+void saveSleepStateValueInDatabase(int state) {
+  sleepStates.set("state", state);
+  sleepStates.set("timestamp", getTimestampUTC());
+  pushFirebaseJsonEntry(RT_DATABASE_SLEEP_STATES, sleepStates);
 }
 
 /*
@@ -603,6 +586,7 @@ void sendTemperatureNotification(float temperature, int typeOfTempWarning) {
    Send a notification to the registered clients about the disturbance of the sleep state
 */
 void sendSleepStateNotification(String babyName) {
+  Serial.println();
   Serial.println("------------------------------------");
   Serial.println("Sending sleep state notification");
 
@@ -629,7 +613,7 @@ void sendSleepStateNotification(String babyName) {
   }
 }
 
-/**
+/*
    Get the baby name from the Firebase realtime database
 */
 void getFirebaseBabyName() {
@@ -646,7 +630,7 @@ void getFirebaseBabyName() {
   }
 }
 
-/**
+/*
    Setup the Firebase realtime database stream callback functions
 */
 void setupFirebaseStreamCallbacks() {
