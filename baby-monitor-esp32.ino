@@ -103,8 +103,8 @@ String currentTempTimestamp = "";
 int currentTempNotificationState = TEMP_NOTIFICATION_IDLING;
 
 // Acceleration variables for deviation calculation
-#define MAX_ACCEL_DEVIATION_PERCENT 10.24
-#define MAX_ACCEL_VALUES_IN_LIST    5
+#define MAX_ACCEL_DEVIATION_PERCENT 30
+#define MAX_ACCEL_VALUES_IN_LIST    7
 QList<float> accelList;
 
 // Sleep state notification control
