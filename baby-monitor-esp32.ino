@@ -111,7 +111,7 @@ QList<float> accelList;
 #define MAX_DEVIATION_TIMESTAMPS_IN_LIST  5
 #define MIN_DEVIATION_TIME_DIFF_FOR_NOTIF 120000 // 2 minutes in milliseconds
 #define SLEEP_STATE_RESET_INTERVAL        180000 // 3 minutes in milliseconds
-int lastSleepStateNotificationSentAt = 0;
+int lastTimeWithMovement = 0;
 QList<long> deviationTimestamps;
 
 // Notification types
@@ -161,6 +161,9 @@ void setup() {
 
   // Get the baby name
   getFirebaseBabyName();
+
+  // Initialize the monitor as if a movement had occurred
+  lastTimeWithMovement = millis();
 }
 
 void loop() {
@@ -280,19 +283,19 @@ void evaluateAccelerationDeviation(float zAxisValue) {
     accelList.pop_back();
     accelList.push_front(zAxisValue);
 
-    // Check if enough time has passed since the last disturbance so that we can reset
+    // Check if enough time has passed since the last movement so that we can reset
     // the sleep state in the Firebase realtime database
-    if (lastSleepStateNotificationSentAt != 0 && millis() - lastSleepStateNotificationSentAt >= SLEEP_STATE_RESET_INTERVAL) {
+    if (lastTimeWithMovement != 0 && millis() - lastTimeWithMovement >= SLEEP_STATE_RESET_INTERVAL) {
       Serial.println();
       Serial.println("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++");
       Serial.println("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++");
-      Serial.println("Resetting the sleep state");
+      Serial.println("Setting the sleep state to Sleeping");
       Serial.println("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++");
       Serial.println("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++");
       Serial.println();
 
       // Reset timestamp
-      lastSleepStateNotificationSentAt = 0;
+      lastTimeWithMovement = 0;
 
       // Push the new sleep state into the Firebase realtime database
       saveSleepStateValueInDatabase(SLEEP_STATE_SLEEPING);
@@ -337,6 +340,9 @@ void reactUponSurpassedDeviation(float zAxisValue, float deviation) {
   Serial.println("*********************************************************");
   Serial.println();
 
+  // Update the last time there was movement detected
+  lastTimeWithMovement = millis();
+
   // Clean the list and start filling it with new values
   accelList.clear();
   accelList.push_front(zAxisValue);
@@ -350,9 +356,6 @@ void reactUponSurpassedDeviation(float zAxisValue, float deviation) {
     Serial.println("Deviations interval = " + String(deviationsInterval) + " millis");
 
     if (deviationsInterval <= MIN_DEVIATION_TIME_DIFF_FOR_NOTIF) {
-      // Update the last time the sleep state notification was sent
-      lastSleepStateNotificationSentAt = millis();
-
       // Clear the list for a fresh start
       deviationTimestamps.clear();
 
