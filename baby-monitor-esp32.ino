@@ -111,7 +111,7 @@ QList<float> accelList;
 #define MAX_DEVIATION_TIMESTAMPS_IN_LIST  5
 #define MIN_DEVIATION_TIME_DIFF_FOR_NOTIF 120000 // 2 minutes in milliseconds
 #define SLEEP_STATE_RESET_INTERVAL        180000 // 3 minutes in milliseconds
-int lastTimeWithMovement = 0;
+unsigned long lastTimeWithMovement = 0;
 QList<long> deviationTimestamps;
 
 // Notification types
@@ -124,6 +124,10 @@ FirebaseData firebaseData;
 // Firebase realtime database objects
 FirebaseJson temps;
 FirebaseJson sleepStates;
+
+// Device calibration (thermometer calibration, time during baby setup which should ignore readings)
+#define DEVICE_CALIBRATION_TIME 15000 // 15 seconds in milliseconds
+unsigned long deviceInitMillis = 0;
 
 void setup() {
   Serial.begin(115200);
@@ -164,9 +168,17 @@ void setup() {
 
   // Initialize the monitor as if a movement had occurred
   lastTimeWithMovement = millis();
+
+  // Save the device initiation time
+  deviceInitMillis = millis();
 }
 
 void loop() {
+  // Wait until the necessary calibration time has passed
+  if (millis() - deviceInitMillis < DEVICE_CALIBRATION_TIME) {
+    return;
+  }
+
   readThermometerValue();
   readAccelerometerValues();
 }
