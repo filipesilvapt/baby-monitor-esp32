@@ -265,35 +265,38 @@ void readAccelerometerValues() {
     Serial.print("\t(m/s^2)");
     Serial.println();
 
+    // Calculate compound acceleration
+    float compoundAccel = sqrt(sq(event.acceleration.x) + sq(event.acceleration.y) + sq(event.acceleration.z));
+
     // Trigger notification if required
-    evaluateAccelerationDeviation(event.acceleration.z);
+    evaluateAccelerationDeviation(compoundAccel);
   }
 }
 
 /*
-   Evaluate the deviation of the current Z Axis value by correlating it to the mean of the
+   Evaluate the deviation of the current acceleration value by correlating it to the mean of the
    previous values present in the list, and checking if it's higher than the max permitted.
    Also, a notification will be triggered if a certain amount of deviations occur within
    a predefined timeframe.
 */
-void evaluateAccelerationDeviation(float zAxisValue) {
+void evaluateAccelerationDeviation(float compoundAccel) {
   int accelListSize = accelList.size();
 
   // Only check the deviation if we have the right amount of acceleration values in the list
   if (accelListSize < MAX_ACCEL_VALUES_IN_LIST) {
-    accelList.push_front(zAxisValue);
+    accelList.push_front(compoundAccel);
     return;
   }
 
-  float deviation = calculateAccelerationDeviation(zAxisValue, accelListSize);
+  float deviation = calculateAccelerationDeviation(compoundAccel, accelListSize);
 
   // Check if the deviation surpasses the limit
   if (deviation >= MAX_ACCEL_DEVIATION_PERCENT) {
-    reactUponSurpassedDeviation(zAxisValue, deviation);
+    reactUponSurpassedDeviation(compoundAccel, deviation);
   } else {
     // Remove the last item in the list and insert the current one at the top
     accelList.pop_back();
-    accelList.push_front(zAxisValue);
+    accelList.push_front(compoundAccel);
 
     // Check if enough time has passed since the last movement so that we can reset
     // the sleep state in the Firebase realtime database
@@ -318,7 +321,7 @@ void evaluateAccelerationDeviation(float zAxisValue) {
 /*
    Calculate the deviation of a given value in comparison to the mean of the previous ones
 */
-float calculateAccelerationDeviation(float zAxisValue, int accelListSize) {
+float calculateAccelerationDeviation(float compoundAccel, int accelListSize) {
   // Calculate the mean of the values in the list
   float accelListMean = 0.0;
   for (size_t i = 0; i < accelListSize; i++) {
@@ -327,7 +330,7 @@ float calculateAccelerationDeviation(float zAxisValue, int accelListSize) {
   accelListMean = accelListMean / accelListSize;
 
   // Calculate the current deviation
-  float deviation = 100 - (zAxisValue * 100 / accelListMean);
+  float deviation = 100 - (compoundAccel * 100 / accelListMean);
 
   // Normalize the deviation
   if (deviation < 0) {
@@ -340,10 +343,10 @@ float calculateAccelerationDeviation(float zAxisValue, int accelListSize) {
 }
 
 /*
-   A deviation surpassed the maximum permitted so, here is the logic to controll the notification
+   A deviation surpassed the maximum permitted so, here is the logic to control the notification
    and sleep state database variable
 */
-void reactUponSurpassedDeviation(float zAxisValue, float deviation) {
+void reactUponSurpassedDeviation(float compoundAccel, float deviation) {
   Serial.println();
   Serial.println("*********************************************************");
   Serial.println("*********************************************************");
@@ -357,7 +360,7 @@ void reactUponSurpassedDeviation(float zAxisValue, float deviation) {
 
   // Clean the list and start filling it with new values
   accelList.clear();
-  accelList.push_front(zAxisValue);
+  accelList.push_front(compoundAccel);
 
   // Register the current deviation timestamp
   deviationTimestamps.push_front(millis());
